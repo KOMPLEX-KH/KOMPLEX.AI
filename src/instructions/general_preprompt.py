@@ -100,8 +100,8 @@ def _normal_prompt(input_text: str, language: str, previous_context: str) -> str
     """
 
 
-def pre_prompt(input_text, language, previousContext, mode="normal"):
+def pre_prompt(prompt: str, previous_context: str, response_type: ResponseType) -> str:
     previous_context = previousContext or "គ្មានព័ត៌មានមុន"
-    if mode == KOMPLEX_MODE:
-        return _komplex_prompt(input_text, language, previous_context)
-    return _normal_prompt(input_text, language, previous_context)
+    if response_type == ResponseType.KOMPLEX:
+        return _komplex_prompt(prompt, previous_context)
+    return _normal_prompt(prompt, previous_context)
