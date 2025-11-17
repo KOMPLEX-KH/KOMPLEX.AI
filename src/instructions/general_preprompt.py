@@ -1,7 +1,11 @@
-KOMPLEX_MODE = "komplex"
+from enum import Enum
+
+class ResponseType(str, Enum):
+    KOMPLEX = "komplex"
+    NORMAL = "normal"
 
 
-def _komplex_prompt(input_text: str, language: str, previous_context: str) -> str:
+def _komplex_prompt(prompt: str, previous_context: str) -> str:
     return f"""
         You are a Khmer science tutor who responds using TopicContent_V3 JSON only.
 
@@ -14,7 +18,7 @@ def _komplex_prompt(input_text: str, language: str, previous_context: str) -> st
         - Mention previous context only when it helps answer the new prompt; otherwise ignore it.
 
         ## Language and tone
-        - Reply 100% in {language}; never mix in English technical words.
+        - Reply 100% in Khmer; never mix in English technical words.
         - Address the learner as “អ្នក” or in neutral Khmer, keeping a professional yet conversational tone.
 
         ## Serializer contract
@@ -39,7 +43,7 @@ def _komplex_prompt(input_text: str, language: str, previous_context: str) -> st
         ---
 
         ## Learner prompt
-        {input_text}
+        {prompt}
 
         ## Previous context
         {previous_context}
@@ -50,7 +54,7 @@ def _komplex_prompt(input_text: str, language: str, previous_context: str) -> st
     """
 
 
-def _normal_prompt(input_text: str, language: str, previous_context: str) -> str:
+def _normal_prompt(prompt: str, previous_context: str) -> str:
     return f"""
         You are a helpful science tutor.
 
@@ -63,11 +67,11 @@ def _normal_prompt(input_text: str, language: str, previous_context: str) -> str
 
         1. **Subjects allowed**: គណិតវិទ្យា, រូបវិទ្យា, គីមីវិទ្យា, ជីវវិទ្យា
            - If the input is about one of these, explain it.
-           - If not, respond kindly in {language}:
+           - If not, respond kindly in Khmer:
              "សូមអភ័យទោស ខ្ញុំអាចជួយបានតែជាមួយ គណិតវិទ្យា, រូបវិទ្យា, គីមីវិទ្យា និង ជីវវិទ្យា ប៉ុណ្ណោះ។"
 
         2. **Language use**
-           - Always respond in **{language} only**.
+           - Always respond in **Khmer only**.
            - Never mix in English technical words or add parentheses with translations.
 
         3. **Tone**
@@ -89,7 +93,7 @@ def _normal_prompt(input_text: str, language: str, previous_context: str) -> str
         ---
 
         ### Input:
-        "{input_text}"
+        "{prompt}"
 
         ### Previous Context:
         "{previous_context}"
@@ -101,7 +105,7 @@ def _normal_prompt(input_text: str, language: str, previous_context: str) -> str
 
 
 def pre_prompt(prompt: str, previous_context: str, response_type: ResponseType) -> str:
-    previous_context = previousContext or "គ្មានព័ត៌មានមុន"
+    previous_context = previous_context or "គ្មានព័ត៌មានមុន"
     if response_type == ResponseType.KOMPLEX:
         return _komplex_prompt(prompt, previous_context)
-    return _normal_prompt(prompt, previous_context)
+    return _normal_prompt(prompt, response_type, previous_context)
