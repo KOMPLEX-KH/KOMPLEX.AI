@@ -1,0 +1,106 @@
+from enum import Enum
+from fastapi import FastAPI, Request, Header, HTTPException
+from dotenv import load_dotenv
+import os
+import google.generativeai as genai
+
+from .instructions.general_preprompt import pre_prompt
+from .instructions import topic_preprompt_box, topic_preprompt_md
+
+# Set up ================================================================================================
+
+# Load env variables
+load_dotenv()
+
+# Configure API key
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY not set in environment")
+
+genai.configure(api_key=api_key)
+
+INTERNAL_KEY = os.getenv("INTERNAL_API_KEY")
+if not INTERNAL_KEY:
+    raise ValueError("INTERNAL_API_KEY not set in environment")
+
+app = FastAPI()
+
+# Create model once at startup
+model = genai.GenerativeModel("gemini-2.5-flash")
+
+# ========================================================================================================================
+
+class ResponseType(str, Enum):
+    KOMPLEX = "komplex"
+    NORMAL = "normal"
+
+
+def _parse_response_type(raw_response_type: str | None) -> ResponseType:
+    if raw_mode is None:
+        return ResponseType.NORMAL
+    try:
+        return ResponseType(raw_response_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid mode") from exc
+
+
+def _build_topic_prompt(
+    response_type: ResponseType, prompt: str, topic_content, previous_context: str | None
+) -> str:
+    if response_type == ResponseType.KOMPLEX:
+        return topic_preprompt_box.topic_pre_prompt(
+            prompt, topic_content, previous_context
+        )
+    return topic_preprompt_md.topic_pre_prompt(prompt, topic_content, previous_context)
+
+
+@app.post("/gemini")
+async def explain_ai(
+    request: Request,
+    x_api_key: str = Header(None),  # Expecting a header like:  X-API-Key: <key>
+):
+    if x_api_key != INTERNAL_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    data = await request.json()
+    prompt = data.get("prompt")
+    response_type = data.get("response_type")
+    previous_context = data.get("previous_context")
+
+    if not prompt or not response_type:
+        return {"error": "Missing prompt or response_type"}
+
+    prompt_text = pre_prompt(prompt, previous_context, response_type)
+    response = model.generate_content(prompt_text)
+
+    return {"result": response.text}
+
+# ========================================================================================================================
+    
+@app.post("/topic/gemini")
+async def explain_topic(
+    request: Request,
+    x_api_key: str = Header(None),  # Expecting a header like:  X-API-Key: <key>
+):
+    if x_api_key != INTERNAL_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    data = await request.json()
+    prompt = data.get("prompt")
+    topic_content = data.get("topic_content")
+    previous_context = data.get("previous_context")
+    response_type = data.get("response_type")
+
+    if not prompt or not topic_content or not response_type:
+        return {"error": "Missing prompt or topic_content or response_type"}
+
+    prompt_text = _build_topic_prompt(response_type, prompt, topic_content, previous_context)
+    response = model.generate_content(prompt_text)
+
+    return {"result": response.text}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("src.main:app", host="0.0.0.0", port=port)
+    
