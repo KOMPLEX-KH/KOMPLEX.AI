@@ -36,12 +36,12 @@ class ResponseType(str, Enum):
 
 
 def _parse_response_type(raw_response_type: str | None) -> ResponseType:
-    if raw_mode is None:
+    if raw_response_type is None:
         return ResponseType.NORMAL
     try:
         return ResponseType(raw_response_type)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid mode") from exc
+        raise HTTPException(status_code=400, detail="Invalid responseType") from exc
 
 
 def _build_topic_prompt(
@@ -64,12 +64,13 @@ async def explain_ai(
 
     data = await request.json()
     prompt = data.get("prompt")
-    response_type = data.get("responseType")
+    raw_response_type = data.get("responseType")
     previous_context = data.get("previousContext")
 
-    if not prompt or not response_type:
-        return {"error": "Missing prompt or response_type"}
+    if not prompt:
+        return {"error": "Missing prompt"}
 
+    response_type = _parse_response_type(raw_response_type)
     prompt_text = pre_prompt(prompt, previous_context, response_type)
     response = model.generate_content(prompt_text)
 
@@ -89,11 +90,12 @@ async def explain_topic(
     prompt = data.get("prompt")
     topic_content = data.get("topicContent")
     previous_context = data.get("previousContext")
-    response_type = data.get("responseType")
+    raw_response_type = data.get("responseType")
 
-    if not prompt or not topic_content or not response_type:
-        return {"error": "Missing prompt or topicContent or responseType"}
+    if not prompt or not topic_content:
+        return {"error": "Missing prompt or topicContent"}
 
+    response_type = _parse_response_type(raw_response_type)
     prompt_text = _build_topic_prompt(response_type, prompt, topic_content, previous_context)
     response = model.generate_content(prompt_text)
 

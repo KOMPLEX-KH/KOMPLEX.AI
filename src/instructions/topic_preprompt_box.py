@@ -44,20 +44,26 @@ def topic_pre_prompt(prompt: str, topic_content: Any, previous_context: Optional
         - Never use emojis.
 
         ## Serializer contract (TopicContent_V3)
-        - Output must be valid JSON: an array where each element is an object with keys "type" and "props".
-        - Allowed types: definition, tip, hint, warning, example, exercise, graph.
-        - definition props: title, content.
-        - tip props: title, content, optional icon.
-        - hint/warning props: content, optional icon.
-        - example props: question, optional content, steps (array of objects with title and content), optional answer.
-        - exercise props: questions array, each question has id, question, options, correctAnswer (but you never reveal new answers; use only provided data).
-        - graph props: expressions array (each with id, latex, optional color or hidden) plus optional options object describing axes, grid, etc.
-        - All textual or structured values must be expressed as the node tree used in the topic JSON:
-            * Plain text → object with type "text" and field value.
-            * Inline math → type "InlineMath" with props.math holding the LaTeX.
-            * Block math → type "BlockMath" with props.math.
-            * HTML containers → type "div" / "span" / "p" etc. with props.children arrays; include Tailwind className when needed.
-        - Children arrays preserve order; nest arrays exactly like the topic data.
+        - Output must be valid JSON: each entry = object with keys "type" and "props".
+        - Allowed types mirror `TopicContent_V3`: definition, tip, hint, warning, example, exercise, graph, graphExplanation, imageExplanation, videoExplanation, threeD, threeDExplanation, custom, summary, practice (use only when the pedagogy demands it).
+        - **Exact prop names (camelCase)**:
+            * definition → title, content
+            * tip → title?, icon?, content
+            * hint/warning → content, icon? (icon is a React component reference name)
+            * example → question, content?, steps[] (objects with title?, content?), answer?
+            * exercise → questions[] with id, question, options, correctAnswer (never invent new answers)
+            * custom → content plus optional styling keys exactly as defined (title, titleIcon, backgroundColor, etc.)
+            * graph / graphExplanation → **expressions** array (never “equations”) where each item has id, latex, color?, hidden?; options? may include xAxisLabel, yAxisLabel, showGrid, etc.
+            * threeD / threeDExplanation → use src, scale, target, threeDText, twoDText, canvasBackground, etc., following the schema.
+            * summary / practice → keep sections/exercises arrays with proper keys (title, description, problems, answers, etc.).
+        - Node tree requirements:
+            * Plain text → {{ "type": "text", "value": "…" }}
+            * Inline math → {{ "type": "InlineMath", "props": {{ "math": "…" }} }}
+            * Block math → {{ "type": "BlockMath", "props": {{ "math": "…" }} }}
+            * Lucide icons or custom elements → {{ "type": "LucideIcon", "props": {{ "name": "ArrowDown", "className": "…" }} }}
+            * HTML containers → type "div"/"span"/"p"/"table"/etc with props.children arrays; include Tailwind className for spacing/layout.
+        - Children arrays must preserve order; nest nodes exactly as needed.
+        - Never invent new property names (e.g., do not create "equations" on a graph); reuse only those listed above to prevent renderer crashes.
         - Return JSON only—no Markdown, no commentary. Invalid JSON is unacceptable.
 
         ## Answer blueprint
