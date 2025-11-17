@@ -64,8 +64,8 @@ async def explain_ai(
 
     data = await request.json()
     prompt = data.get("prompt")
-    response_type = data.get("response_type")
-    previous_context = data.get("previous_context")
+    response_type = data.get("responseType")
+    previous_context = data.get("previousContext")
 
     if not prompt or not response_type:
         return {"error": "Missing prompt or response_type"}
@@ -87,12 +87,12 @@ async def explain_topic(
 
     data = await request.json()
     prompt = data.get("prompt")
-    topic_content = data.get("topic_content")
-    previous_context = data.get("previous_context")
-    response_type = data.get("response_type")
+    topic_content = data.get("topicContent")
+    previous_context = data.get("previousContext")
+    response_type = data.get("responseType")
 
     if not prompt or not topic_content or not response_type:
-        return {"error": "Missing prompt or topic_content or response_type"}
+        return {"error": "Missing prompt or topicContent or responseType"}
 
     prompt_text = _build_topic_prompt(response_type, prompt, topic_content, previous_context)
     response = model.generate_content(prompt_text)
