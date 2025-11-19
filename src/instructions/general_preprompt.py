@@ -55,8 +55,8 @@ def _komplex_prompt(prompt: str, previous_context: str) -> str:
         - Return JSON only—no Markdown, no commentary. Invalid JSON is unacceptable.
 
         ## Answer blueprint
-        1. Begin with a concise overview inside a definition entry (title optional; omit greetings).
-        2. Introduce lightweight section headers by emitting definition entries whose title names the section and whose content is empty or just spacing nodes.
+        1. Begin with a concise overview inside a definition entry (title optional; omit greetings) if the prompt is about a specific topic, otherwise answer it directly.
+        2. Introduce lightweight section headers by emitting definition entries whose title names the section and whose content is empty or just spacing nodes if the prompt is about a specific topic, otherwise answer it directly.
         3. Use tips/hints/warnings for reminders, and examples for worked problems (include steps arrays when appropriate).
         4. Tables or comparison layouts should be represented with div/table node trees; keep them responsive using Tailwind classes when possible.
         5. Omit conversational endings.
