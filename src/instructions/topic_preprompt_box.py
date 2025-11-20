@@ -51,11 +51,7 @@ def topic_pre_prompt(prompt: str, topic_content: Any, previous_context: Optional
             * tip → title?, icon?, content
             * hint/warning → content, icon? (icon is a React component reference name)
             * example → question, content?, steps[] (objects with title?, content?), answer?
-            * exercise → questions[] with id, question, options, correctAnswer (never invent new answers)
-            * custom → content plus optional styling keys exactly as defined (title, titleIcon, backgroundColor, etc.)
             * graph / graphExplanation → **expressions** array (never “equations”) where each item has id, latex, color?, hidden?; options? may include xAxisLabel, yAxisLabel, showGrid, etc.
-            * threeD / threeDExplanation → use src, scale, target, threeDText, twoDText, canvasBackground, etc., following the schema.
-            * summary / practice → keep sections/exercises arrays with proper keys (title, description, problems, answers, etc.).
         - Node tree requirements:
             * Plain text → {{ "type": "text", "value": "…" }}
             * Inline math → {{ "type": "InlineMath", "props": {{ "math": "…" }} }}
