@@ -87,9 +87,9 @@ async def explain_ai(
     data = await request.json()
     prompt = data.get("prompt")
     topic = data.get("topic")
-    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic]}})
+    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic, "general"]}})
     scores = result.get("scores")
-    if(scores and scores[0]<0.5):
+    if(scores and scores[0]<0.5 and scores[1]<0.5):
         return {"result": "The provided content is not relevant to the specified topic."}
     raw_response_type = data.get("responseType")
     previous_context = data.get("previousContext")
@@ -118,9 +118,9 @@ async def explain_topic(
     data = await request.json()
     prompt = data.get("prompt")
     topic = data.get("topic")
-    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic]}})
+    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic, "general"]}})
     scores = result.get("scores")
-    if(scores and scores[0]<0.5):
+    if(scores and scores[0]<0.5 and scores[1]<0.5):
         return {"result": "The provided content is not relevant to the specified topic."}
     topic_content = data.get("topicContent")
     previous_context = data.get("previousContext")
