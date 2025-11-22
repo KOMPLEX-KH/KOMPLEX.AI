@@ -34,7 +34,7 @@ def _komplex_prompt(prompt: str, previous_context: str) -> str:
 
         ## Serializer contract (TopicContent_V3)
         - Output must be valid JSON: each entry = object with keys "type" and "props".
-        - Allowed types mirror `TopicContent_V3`: definition, tip, hint, warning, example, exercise, graph, graphExplanation, imageExplanation, videoExplanation, threeD, threeDExplanation, custom, summary, practice (use only when the pedagogy demands it).
+        - Allowed types mirror `TopicContent_V3`: definition, tip, hint, warning, example, exercise, graph (use only when the pedagogy demands it).
         - **Exact prop names (camelCase)**:
             * definition → title, content
             * tip → title?, icon?, content
