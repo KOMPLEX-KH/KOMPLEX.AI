@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Use official Python image
 FROM python:3.11-slim
 
@@ -12,8 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy dependency files first (for better caching)
 COPY requirements.txt .
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (use BuildKit cache for pip downloads)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the app
 COPY . .

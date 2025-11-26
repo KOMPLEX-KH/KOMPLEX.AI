@@ -1,18 +1,20 @@
-from enum import Enum
-from fastapi import FastAPI, Request, Header, HTTPException
-from dotenv import load_dotenv
 import os
+from enum import Enum
+
 import google.generativeai as genai
-import requests
-from .instructions.general_preprompt import pre_prompt
+from dotenv import load_dotenv
+from fastapi import FastAPI, Header, HTTPException, Request
+from pydantic import BaseModel
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+
 from .instructions import topic_preprompt_box, topic_preprompt_md
+from .instructions.general_preprompt import pre_prompt
 
-# Set up ================================================================================================
 
-# Load env variables
+# Environment & external services ==============================================================================
+
 load_dotenv()
 
-# Configure API key
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY not set in environment")
@@ -27,19 +29,25 @@ HF_TOKEN_KEY = os.getenv("HF_TOKEN_KEY")
 if not HF_TOKEN_KEY:
     raise ValueError("HF_TOKEN_KEY not set in environment")
 
-HF_API_URL = os.getenv("HF_API_URL")
-if not HF_API_URL:
-    raise ValueError("HF_API_URL not set in environment")
+
+classifier = pipeline(
+    "zero-shot-classification",
+    model="MoritzLaurer/xlm-v-base-mnli-xnli",
+)
+
+model_name = "songhieng/khmer-mt5-summarization"
+summary_tokenizer = AutoTokenizer.from_pretrained(
+    model_name,
+    use_auth_token=HF_TOKEN_KEY,
+)
+summary_model = AutoModelForSeq2SeqLM.from_pretrained(
+    model_name,
+    use_auth_token=HF_TOKEN_KEY,
+)
 
 app = FastAPI()
+gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
-# Create model once at startup
-model = genai.GenerativeModel("gemini-2.5-flash")
-
-API_URL = HF_API_URL
-headers = {
-    "Authorization": f"Bearer {os.environ['HF_TOKEN_KEY']}",
-}
 
 # ========================================================================================================================
 
@@ -49,9 +57,11 @@ class ResponseType(str, Enum):
     NORMAL = "normal"
 
 
-def small_validate(payload):
-    response = requests.post(API_URL, headers=headers, json=payload)
-    return response.json()
+class SummarizeRequest(BaseModel):
+    text: str
+
+
+# Helper functions ============================================================================================
 
 
 def _parse_response_type(raw_response_type: str | None) -> ResponseType:
@@ -71,9 +81,30 @@ def _build_topic_prompt(
 ) -> str:
     if response_type == ResponseType.KOMPLEX:
         return topic_preprompt_box.topic_pre_prompt(
-            prompt, topic_content, previous_context
+            prompt,
+            topic_content,
+            previous_context,
         )
-    return topic_preprompt_md.topic_pre_prompt(prompt, topic_content, previous_context)
+    return topic_preprompt_md.topic_pre_prompt(
+        prompt,
+        topic_content,
+        previous_context,
+    )
+
+
+def small_validate(text: str, topic: str) -> bool:
+    sequence_to_classify = text
+    candidate_labels = [topic, "general"]
+    output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
+    scores = output.get("scores")
+    if scores and scores[0] < 0.5 and scores[1] < 0.5:
+        return False
+    return True
+
+
+@app.get("/ping")
+async def ping():
+    return {"message": "pong"}
 
 
 @app.post("/gemini")
@@ -87,10 +118,14 @@ async def explain_ai(
     data = await request.json()
     prompt = data.get("prompt")
     topic = data.get("topic")
-    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic, "general"]}})
-    scores = result.get("scores")
-    if(scores and scores[0]<0.5 and scores[1]<0.5):
-        return {"result": "The provided content is not relevant to the specified topic."}
+    result = small_validate(
+        prompt,
+        topic,
+    )
+    if result is False:
+        return {
+            "result": "The provided content is not relevant to the specified topic."
+        }
     raw_response_type = data.get("responseType")
     previous_context = data.get("previousContext")
 
@@ -99,12 +134,9 @@ async def explain_ai(
 
     response_type = _parse_response_type(raw_response_type)
     prompt_text = pre_prompt(prompt, previous_context, response_type)
-    response = model.generate_content(prompt_text)
+    response = gemini_model.generate_content(prompt_text)
 
     return {"result": response.text}
-
-
-# ========================================================================================================================
 
 
 @app.post("/topic/gemini")
@@ -118,10 +150,11 @@ async def explain_topic(
     data = await request.json()
     prompt = data.get("prompt")
     topic = data.get("topic")
-    result = small_validate({"inputs": prompt, "parameters": {"candidate_labels": [topic, "general"]}})
-    scores = result.get("scores")
-    if(scores and scores[0]<0.5 and scores[1]<0.5):
-        return {"result": "The provided content is not relevant to the specified topic."}
+    result = small_validate(prompt, topic)
+    if result is False:
+        return {
+            "result": "The provided content is not relevant to the specified topic."
+        }
     topic_content = data.get("topicContent")
     previous_context = data.get("previousContext")
     raw_response_type = data.get("responseType")
@@ -131,11 +164,38 @@ async def explain_topic(
 
     response_type = _parse_response_type(raw_response_type)
     prompt_text = _build_topic_prompt(
-        response_type, prompt, topic_content, previous_context
+        response_type,
+        prompt,
+        topic_content,
+        previous_context,
     )
-    response = model.generate_content(prompt_text)
+    response = gemini_model.generate_content(prompt_text)
 
     return {"result": response.text}
+
+
+@app.post("/summarize")
+def summarize(
+    request: SummarizeRequest,
+    x_api_key: str = Header(None),
+):
+    if x_api_key != INTERNAL_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    inputs = summary_tokenizer(
+        f"summarize: {request.text}",
+        return_tensors="pt",
+        truncation=True,
+        max_length=512,
+    )
+    summary_ids = summary_model.generate(
+        **inputs,
+        max_length=150,
+        num_beams=5,
+        length_penalty=2.0,
+        early_stopping=True,
+    )
+    summary = summary_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return {"summary": summary}
 
 
 if __name__ == "__main__":
