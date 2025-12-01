@@ -59,6 +59,7 @@ class ResponseType(str, Enum):
 
 class SummarizeRequest(BaseModel):
     text: str
+    output_type: str
 
 
 # Helper functions ============================================================================================
@@ -92,12 +93,15 @@ def _build_topic_prompt(
     )
 
 
-def small_validate(text: str, topic: str) -> bool:
+def small_validate(text: str, topic: list[str]) -> bool:
     sequence_to_classify = text
-    candidate_labels = [topic, "general"]
+    candidate_labels = topic + ["general"]
     output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
     scores = output.get("scores")
-    if scores and scores[0] < 0.5 and scores[1] < 0.5:
+    labels = output.get("labels") or []
+    label_scores = dict(zip(labels, scores or []))
+    general_score = label_scores.get("general", 0)
+    if scores and max(scores) <= 0.5 and general_score < 0.5:
         return False
     return True
 
@@ -117,10 +121,9 @@ async def explain_ai(
 
     data = await request.json()
     prompt = data.get("prompt")
-    topic = data.get("topic")
     result = small_validate(
         prompt,
-        topic,
+        ["math", "chemistry", "physics", "biology"],
     )
     if result is False:
         return {
@@ -175,10 +178,11 @@ async def explain_topic(
 
 
 @app.post("/summarize")
-def summarize(
+async def summarize(
     request: SummarizeRequest,
     x_api_key: str = Header(None),
 ):
+    output_type = request.output_type
     if x_api_key != INTERNAL_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     inputs = summary_tokenizer(
@@ -187,9 +191,11 @@ def summarize(
         truncation=True,
         max_length=512,
     )
+    length_map = {"summarize": 512, "title": 10}
+    output_length = length_map.get(output_type)
     summary_ids = summary_model.generate(
         **inputs,
-        max_length=150,
+        max_length=output_length,
         num_beams=5,
         length_penalty=2.0,
         early_stopping=True,
