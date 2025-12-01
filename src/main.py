@@ -59,7 +59,7 @@ class ResponseType(str, Enum):
 
 class SummarizeRequest(BaseModel):
     text: str
-    output_type: str
+    outputType: str
 
 
 # Helper functions ============================================================================================
@@ -182,7 +182,7 @@ async def summarize(
     request: SummarizeRequest,
     x_api_key: str = Header(None),
 ):
-    output_type = request.output_type
+    output_type = request.outputType
     if x_api_key != INTERNAL_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     inputs = summary_tokenizer(
@@ -191,7 +191,7 @@ async def summarize(
         truncation=True,
         max_length=512,
     )
-    length_map = {"summarize": 512, "title": 10}
+    length_map = {"summary": 512, "title": 10}
     output_length = length_map.get(output_type)
     summary_ids = summary_model.generate(
         **inputs,
