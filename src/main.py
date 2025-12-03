@@ -108,27 +108,19 @@ def small_validate(text: str, topic_content: list[str], response_type: ResponseT
 
 
 def _format_error_response(error_message: str, response_type: ResponseType) -> dict:
-    """Format error response based on response type."""
     if response_type == ResponseType.KOMPLEX:
-        # Return TopicContent_V3 JSON format
         return {
-            "result": [
+            "result": """```json[
                 {
                     "type": "definition",
                     "props": {
                         "title": "",
-                        "content": [
-                            {
-                                "type": "text",
-                                "value": error_message
-                            }
-                        ]
+                        "content": "សូមអធ្យាស្រ័យ តារា មិនអាចឆ្លើយតបបានទេ"
                     }
                 }
-            ]
+            ]```"""
         }
     else:
-        # Return normal text format
         return {"result": error_message}
 
 
