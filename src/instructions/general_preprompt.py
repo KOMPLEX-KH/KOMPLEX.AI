@@ -89,6 +89,7 @@ def _komplex_prompt(prompt: str, previous_context: str) -> str:
         {prompt}
 
         ## Previous context
+        Note: Previous context contains a tab chat summary at the top, followed by the data of the previous 3 prompts and responses.
         {previous_context}
 
         ---
@@ -161,6 +162,7 @@ def _normal_prompt(prompt: str, previous_context: str) -> str:
         "{prompt}"
 
         ### Previous Context:
+        Note: Previous context contains a tab chat summary at the top, followed by the data of the previous 3 prompts and responses.
         "{previous_context}"
 
         ---

@@ -101,6 +101,7 @@ def topic_pre_prompt(prompt: str, topic_content: Any, previous_context: Optional
         {prompt}
 
         ## Previous context
+        Note: Previous context contains a tab chat summary at the top, followed by the data of the previous 3 prompts and responses.
         {previous_context}
 
         ---

@@ -125,43 +125,43 @@ def translate_to_english(text: str) -> str:
             raise ValueError("No translated text found in the response")
 
 
-def small_validate(
-    text: str,
-    topic_content: list[str],
-    response_type: ResponseType = ResponseType.NORMAL,
-) -> bool | dict:
-    if is_khmer(text):
-        sequence_to_classify = translate_to_english(text)
-    else:
-        sequence_to_classify = text
-
-    candidate_labels = topic_content + ["general"]
-    output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
-    scores = output.get("scores")
-    labels = output.get("labels") or []
-    label_scores = dict(zip(labels, scores or []))
-    general_score = label_scores.get("general", 0)
-    if scores and max(scores) <= 0.5 and general_score < 0.5:
-        error_message = "សូមអធ្យាស្រ័យ តារា មិនអាចឆ្លើយតបបានទេ"
-        return _format_error_response(error_message, response_type)
-    return True
-
-
-def _format_error_response(error_message: str, response_type: ResponseType) -> dict:
-    if response_type == ResponseType.KOMPLEX:
-        return {
-            "result": """```json[
-                {
-                    "type": "definition",
-                    "props": {
-                        "title": "",
-                        "content": "សូមអធ្យាស្រ័យ តារា មិនអាចឆ្លើយតបបានទេ"
-                    }
-                }
-            ]```"""
-        }
-    else:
-        return {"result": error_message}
+# def small_validate(
+#     text: str,
+#     topic_content: list[str],
+#     response_type: ResponseType = ResponseType.NORMAL,
+# ) -> bool | dict:
+#     if is_khmer(text):
+#         sequence_to_classify = translate_to_english(text)
+#     else:
+#         sequence_to_classify = text
+#
+#     candidate_labels = topic_content + ["general"]
+#     output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
+#     scores = output.get("scores")
+#     labels = output.get("labels") or []
+#     label_scores = dict(zip(labels, scores or []))
+#     general_score = label_scores.get("general", 0)
+#     if scores and max(scores) <= 0.5 and general_score < 0.5:
+#         error_message = "សូមអធ្យាស្រ័យ តារា មិនអាចឆ្លើយតបបានទេ"
+#         return _format_error_response(error_message, response_type)
+#     return True
+#
+#
+# def _format_error_response(error_message: str, response_type: ResponseType) -> dict:
+#     if response_type == ResponseType.KOMPLEX:
+#         return {
+#             "result": """```json[
+#                 {
+#                     "type": "definition",
+#                     "props": {
+#                         "title": "",
+#                         "content": "សូមអធ្យាស្រ័យ តារា មិនអាចឆ្លើយតបបានទេ"
+#                     }
+#                 }
+#             ]```"""
+#         }
+#     else:
+#         return {"result": error_message}
 
 
 @app.get("/ping")
@@ -187,42 +187,42 @@ async def explain_ai(
 
     response_type = _parse_response_type(raw_response_type)
 
-    result = small_validate(
-        prompt,
-        [
-            "mathematics",
-            "chemistry",
-            "physics",
-            "biology",
-            "literature",
-            "history",
-            "geography",
-            "computer science",
-            "programming",
-            "engineering",
-            "astronomy",
-            "geology",
-            "economics",
-            "psychology",
-            "sociology",
-            "philosophy",
-            "art",
-            "music",
-            "language",
-            "linguistics",
-            "political science",
-            "business",
-            "medicine",
-            "education",
-            "research",
-            "academic writing",
-            "greeting",
-            "conversation",
-        ],
-        response_type,
-    )
-    if isinstance(result, dict):
-        return result
+    # result = small_validate(
+    #     prompt,
+    #     [
+    #         "mathematics",
+    #         "chemistry",
+    #         "physics",
+    #         "biology",
+    #         "literature",
+    #         "history",
+    #         "geography",
+    #         "computer science",
+    #         "programming",
+    #         "engineering",
+    #         "astronomy",
+    #         "geology",
+    #         "economics",
+    #         "psychology",
+    #         "sociology",
+    #         "philosophy",
+    #         "art",
+    #         "music",
+    #         "language",
+    #         "linguistics",
+    #         "political science",
+    #         "business",
+    #         "medicine",
+    #         "education",
+    #         "research",
+    #         "academic writing",
+    #         "greeting",
+    #         "conversation",
+    #     ],
+    #     response_type,
+    # )
+    # if isinstance(result, dict):
+    #     return result
 
     prompt_text = pre_prompt(prompt, previous_context, response_type)
     response = gemini_model.generate_content(prompt_text)
@@ -249,42 +249,42 @@ async def explain_topic(
 
     response_type = _parse_response_type(raw_response_type)
 
-    result = small_validate(
-        prompt,
-        [
-            "mathematics",
-            "chemistry",
-            "physics",
-            "biology",
-            "literature",
-            "history",
-            "geography",
-            "computer science",
-            "programming",
-            "engineering",
-            "astronomy",
-            "geology",
-            "economics",
-            "psychology",
-            "sociology",
-            "philosophy",
-            "art",
-            "music",
-            "language",
-            "linguistics",
-            "political science",
-            "business",
-            "medicine",
-            "education",
-            "research",
-            "academic writing",
-            "greeting",
-            "conversation",
-        ],
-        response_type,
-    )
-    if isinstance(result, dict):
-        return result
+    # result = small_validate(
+    #     prompt,
+    #     [
+    #         "mathematics",
+    #         "chemistry",
+    #         "physics",
+    #         "biology",
+    #         "literature",
+    #         "history",
+    #         "geography",
+    #         "computer science",
+    #         "programming",
+    #         "engineering",
+    #         "astronomy",
+    #         "geology",
+    #         "economics",
+    #         "psychology",
+    #         "sociology",
+    #         "philosophy",
+    #         "art",
+    #         "music",
+    #         "language",
+    #         "linguistics",
+    #         "political science",
+    #         "business",
+    #         "medicine",
+    #         "education",
+    #         "research",
+    #         "academic writing",
+    #         "greeting",
+    #         "conversation",
+    #     ],
+    #     response_type,
+    # )
+    # if isinstance(result, dict):
+    #     return result
 
     prompt_text = _build_topic_prompt(
         response_type,
