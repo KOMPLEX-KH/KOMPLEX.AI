@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    # volumes:
-    #   - .:/usr/src/app
+    volumes:
+      - .:/usr/src/app
     env_file:
       - .env
     environment:
