@@ -118,7 +118,7 @@ def translate_to_english(text: str) -> str:
     )
     if response.status_code == 200:
         result = response.json()
-        translated_texts = result.get("translated_text", [])
+        translated_texts = result.get("translate_text", [])
         if translated_texts:
             return translated_texts[0]
         else:
