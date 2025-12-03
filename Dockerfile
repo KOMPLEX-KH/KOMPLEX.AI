@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install dependencies (use BuildKit cache for pip downloads)
-RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=cacheKey-pip-cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the app
