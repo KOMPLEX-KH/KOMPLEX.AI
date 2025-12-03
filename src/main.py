@@ -1,6 +1,8 @@
+import re
 import os
 from enum import Enum
-
+import requests
+from requests.auth import HTTPBasicAuth
 import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -93,8 +95,46 @@ def _build_topic_prompt(
     )
 
 
-def small_validate(text: str, topic_content: list[str], response_type: ResponseType = ResponseType.NORMAL) -> bool | dict:
-    sequence_to_classify = text
+def is_khmer(text):
+    pattern = r"[\u1780-\u17FF\u19E0-\u19FF]"
+    return bool(re.search(pattern, text))
+
+
+def translate_to_english(text: str) -> str:
+    username = os.getenv("USERNAME_TRANSLATE_API")
+    password = os.getenv("PASSWORD_TRANSLATE_API")
+    url = os.getenv("TRANSLATE_API_URL")
+
+    if not url or not username or not password:
+        raise ValueError("Translation API credentials are not set in environment")
+
+    payload = {"input_text": [text], "src_lang": "kh", "tgt_lang": "eng"}
+
+    response = requests.post(
+        url,
+        json=payload,
+        headers={"Content-Type": "application/json"},
+        auth=HTTPBasicAuth(username, password),
+    )
+    if response.status_code == 200:
+        result = response.json()
+        translated_texts = result.get("translated_text", [])
+        if translated_texts:
+            return translated_texts[0]
+        else:
+            raise ValueError("No translated text found in the response")
+
+
+def small_validate(
+    text: str,
+    topic_content: list[str],
+    response_type: ResponseType = ResponseType.NORMAL,
+) -> bool | dict:
+    if is_khmer(text):
+        sequence_to_classify = translate_to_english(text)
+    else:
+        sequence_to_classify = text
+
     candidate_labels = topic_content + ["general"]
     output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
     scores = output.get("scores")
@@ -141,12 +181,12 @@ async def explain_ai(
     prompt = data.get("prompt")
     raw_response_type = data.get("responseType")
     previous_context = data.get("previousContext")
-    
+
     if not prompt:
         return {"error": "Missing prompt"}
-    
+
     response_type = _parse_response_type(raw_response_type)
-    
+
     result = small_validate(
         prompt,
         [
@@ -203,12 +243,12 @@ async def explain_topic(
     topic_content = data.get("topicContent")
     previous_context = data.get("previousContext")
     raw_response_type = data.get("responseType")
-    
+
     if not prompt or not topic_content:
         return {"error": "Missing prompt or topicContent"}
-    
+
     response_type = _parse_response_type(raw_response_type)
-    
+
     result = small_validate(
         prompt,
         [
