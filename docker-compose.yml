@@ -1,7 +1,7 @@
-version: '3.8'
-
 services:
-  app:
+  komplexai-app:
+    container_name: komplexai-app
+    image: komplexai-app:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,5 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/usr/src/app
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
