@@ -297,31 +297,31 @@ async def explain_topic(
     return {"result": response.text}
 
 
-@app.post("/summarize")
-async def summarize(
-    request: SummarizeRequest,
-    x_api_key: str = Header(None),
-):
-    output_type = request.outputType
-    if x_api_key != INTERNAL_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    inputs = summary_tokenizer(
-        f"summarize: {request.text}",
-        return_tensors="pt",
-        truncation=True,
-        max_length=512,
-    )
-    length_map = {"summary": 512, "title": 10}
-    output_length = length_map.get(output_type)
-    summary_ids = summary_model.generate(
-        **inputs,
-        max_length=output_length,
-        num_beams=5,
-        length_penalty=2.0,
-        early_stopping=True,
-    )
-    summary = summary_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    return {"summary": summary}
+# @app.post("/summarize")
+# async def summarize(
+#     request: SummarizeRequest,
+#     x_api_key: str = Header(None),
+# ):
+#     output_type = request.outputType
+#     if x_api_key != INTERNAL_KEY:
+#         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+#     inputs = summary_tokenizer(
+#         f"summarize: {request.text}",
+#         return_tensors="pt",
+#         truncation=True,
+#         max_length=512,
+#     )
+#     length_map = {"summary": 512, "title": 10}
+#     output_length = length_map.get(output_type)
+#     summary_ids = summary_model.generate(
+#         **inputs,
+#         max_length=output_length,
+#         num_beams=5,
+#         length_penalty=2.0,
+#         early_stopping=True,
+#     )
+#     summary = summary_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+#     return {"summary": summary}
 
 
 if __name__ == "__main__":
