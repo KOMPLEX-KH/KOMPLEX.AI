@@ -1,8 +1,13 @@
 fastapi
 uvicorn
-requests
 python-dotenv
 google-generativeai
+langchain-community
+langchain-core
+chromadb
+sentence-transformers
+langchain
+requests
 datasets
 torch==2.9.1
 transformers==4.57.2
