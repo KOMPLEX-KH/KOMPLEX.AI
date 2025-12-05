@@ -1,7 +1,9 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  app:
+  komplexai-app:
+    container_name: komplexai-app
+    image: komplexai-app:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,7 +11,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/usr/src/app
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - GEMINI_API_KEY=AIzaSyCwXkjaB2uXQSvgHNJzb2bJGerih5Ajm1k
-      - INTERNAL_API_KEY=3fda8b27533c8f81f7c37cf72e11de35e266f549a6f62c68b583b0a91b5bb6eev
