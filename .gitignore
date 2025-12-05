@@ -40,3 +40,7 @@ htmlcov/
 # Others
 *.bak
 *.tmp
+
+# Vector stores
+chroma_db/
+src/chroma_db/

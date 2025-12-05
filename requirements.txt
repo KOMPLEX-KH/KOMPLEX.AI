@@ -2,3 +2,8 @@ fastapi
 uvicorn
 python-dotenv
 google-generativeai
+langchain-community
+langchain-core
+chromadb
+sentence-transformers
+langchain
