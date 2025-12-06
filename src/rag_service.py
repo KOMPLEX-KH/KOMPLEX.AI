@@ -7,7 +7,11 @@ from typing import List
 from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    # Fallback for older langchain versions
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 try:
     from langchain_core.documents import Document
 except ImportError:
