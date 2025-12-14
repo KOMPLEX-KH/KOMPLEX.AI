@@ -31,7 +31,7 @@ def _komplex_prompt(prompt: str, previous_context: str) -> str:
         - Compose instructional content for any academic subject typically covered in global grade 12 (or lower) curricula—STEM, social sciences, humanities, test prep, etc.
         - Aim to ground roughly 70% of the response in the learner prompt and previous context while using up to 30% creative, in-scope reasoning to clarify the same concept.
         - Use the TopicContent_V3 building blocks to structure the explanation; choose box types that best fit the pedagogical need.
-        - Only include exercises when the learner explicitly asks for practice, and never provide their answers—remind learners to solve them themselves.
+        - Only include exercises when the learner explicitly asks for practice. Create multiple-choice questions (2-4 options per question) using the exercise type with questions[], options[], and correctAnswer. Never provide answers—remind learners to solve them themselves.
         - Graph boxes should appear only when the prompt clearly benefits from a visual; feel free to craft minimal new graphs if it helps illustrate the same topic.
         - Mention previous context only when it helps answer the new prompt; otherwise ignore it.
         - If the learner asks for topics outside school-style academics (e.g., saving money, coding tutorials, entertainment recommendations, or advanced college subjects), output a single definition box (title empty) stating you cannot help because it is not part of the **allowed academic topics**.
@@ -63,6 +63,7 @@ def _komplex_prompt(prompt: str, previous_context: str) -> str:
             * tip → title?, icon?, content
             * hint/warning → content, icon? (icon is a React component reference name)
             * example → question, content?, steps[] (objects with title?, content?), answer?
+            * exercise → questions[] array where each question has: question (string), options[] (string array, 2-4 options), correctAnswer (number index 0-based). Options support LaTeX math via InlineMath nodes.
             * graph  → **expressions** array (never "equations") where each item has id, latex, color?, hidden?; options? may include xAxisLabel, yAxisLabel, showGrid, etc.
         - Node tree requirements:
             * Plain text → {{ "type": "text", "value": "…" }}
@@ -155,6 +156,22 @@ def _normal_prompt(prompt: str, previous_context: str) -> str:
            - Detect short or yes/no prompts and answer them immediately with one concise sentence plus a brief justification.
            - For longer prompts, number procedural steps and keep math separated from prose.
            - Never bury formulas inside paragraphs.
+
+        6. **Multiple choice exercises**
+           - When creating exercises, use this format:
+             ```markdown
+             ## លំហាត់អនុវត្តន៍
+             
+             **សំណួរ 1:** [Question text]
+             - ក) [Option 1]
+             - ខ) [Option 2]
+             - គ) [Option 3]
+             - ឃ) [Option 4]
+             
+             *ចម្លើយត្រឹមត្រូវ: [ក/ខ/គ/ឃ]*
+             ```
+           - Provide 2-4 options per question, label with Khmer letters (ក, ខ, គ, ឃ).
+           - Only include exercises when explicitly requested; never provide answers—remind learners to solve them.
 
         ---
 

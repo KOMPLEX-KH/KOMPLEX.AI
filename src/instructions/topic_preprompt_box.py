@@ -42,7 +42,7 @@ def topic_pre_prompt(prompt: str, topic_content: Any, previous_context: Optional
         - Stay within the current lesson’s skill scope; add fresh supporting material only when it clarifies the same concept.
         - Detect short or yes/no questions and answer immediately with one concise sentence plus a brief justification—no theory recap, no mention of previous context.
         - For explanation-style prompts, keep summaries minimal and avoid rewriting the given topic. Only include the boxes needed to satisfy the request and no mention of previous context if current prompt is unrelated.
-        - Exercises/examples: if the learner asks for them, jump straight into the worked solution; do not prepend definitions.
+        - Exercises/examples: if the learner asks for them, jump straight into the worked solution; do not prepend definitions. For multiple-choice exercises, create 2-4 options per question using the exercise type with questions[], options[], and correctAnswer.
         - Graph boxes appear only when the learner requests a graph or when a new visual genuinely helps (e.g., illustrating an argument of a complex number). Keep the expressions list minimal.
         - If the learner asks for content outside this topic, output one definition box (empty title) that says you cannot help because it is not related to **the current topic** and include `<a href="https://komplex.app/ai" className="text-primary underline">តារា AI</a>`. Skip the link for inappropriate or unsafe prompts and refuse politely.
         - Treat new, unrelated questions as fresh prompts—do not reference earlier context unless the learner explicitly ties them together.
@@ -73,7 +73,8 @@ def topic_pre_prompt(prompt: str, topic_content: Any, previous_context: Optional
             * tip → title?, icon?, content
             * hint/warning → content, icon? (icon is a React component reference name)
             * example → question, content?, steps[] (objects with title?, content?), answer?
-            * graph / graphExplanation → **expressions** array (never “equations”) where each item has id, latex, color?, hidden?; options? may include xAxisLabel, yAxisLabel, showGrid, etc.
+            * exercise → questions[] array where each question has: question (string), options[] (string array, 2-4 options), correctAnswer (number index 0-based). Options support LaTeX math via InlineMath nodes.
+            * graph / graphExplanation → **expressions** array (never "equations") where each item has id, latex, color?, hidden?; options? may include xAxisLabel, yAxisLabel, showGrid, etc.
         - Node tree requirements:
             * Plain text → {{ "type": "text", "value": "…" }}
             * Inline math → {{ "type": "InlineMath", "props": {{ "math": "…" }} }}
