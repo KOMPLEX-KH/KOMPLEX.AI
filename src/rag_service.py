@@ -1,220 +1,274 @@
-"""
-RAG (Retrieval-Augmented Generation) Service
-Handles document loading, vector store creation, and retrieval
-"""
+import os
+import hashlib
+import logging
+import json
+import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional, AsyncGenerator
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+import redis.asyncio as redis
+import google.generativeai as genai
+from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
 from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from rank_bm25 import BM25Okapi
+
 try:
     from langchain_core.documents import Document
 except ImportError:
     from langchain.schema import Document
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
+DEFAULT_MEMORY_KEY = "user_memory:default"
+
+# ================================================
+# RAG Service
+# ================================================
 class RAGService:
-    """Service for RAG operations: document loading, embedding, and retrieval"""
-    
-    def __init__(self, persist_directory: str = "./chroma_db"):
-        """
-        Initialize RAG service
-        
-        Args:
-            persist_directory: Directory to persist ChromaDB vector store
-        """
+    def __init__(
+        self,
+        persist_directory: str = "./chroma_db",
+        collection_name: str = "biology",
+        redis_url: str = "redis://localhost:6379",
+        top_k: int = 6,
+        memory_max: int = 10,
+        memory_token_limit: int = 2000,
+    ):
         self.persist_directory = persist_directory
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len,
-        )
-        self.vector_store = None
-    
-    def load_documents(self, file_path: str) -> List[Document]:
-        """
-        Load documents from a text file
-        
-        Args:
-            file_path: Path to the document file
-            
-        Returns:
-            List of Document objects
-        """
-        loader = TextLoader(file_path, encoding="utf-8")
-        return loader.load()
-    
-    def load_documents_from_folder(self, folder_path: str, file_pattern: str = "*.txt") -> List[Document]:
-        """
-        Load all documents from a folder
-        
-        Args:
-            folder_path: Path to the folder containing documents
-            file_pattern: File pattern to match (default: "*.txt")
-            
-        Returns:
-            List of Document objects from all matching files
-        """
-        folder = Path(folder_path)
-        if not folder.exists():
-            raise ValueError(f"Folder not found: {folder_path}")
-        
-        all_documents = []
-        for file_path in folder.glob(file_pattern):
-            try:
-                docs = self.load_documents(str(file_path))
-                all_documents.extend(docs)
-            except Exception as e:
-                print(f"Warning: Could not load {file_path}: {e}")
-        
-        return all_documents
-    
-    def create_vector_store(self, documents: List[Document], collection_name: str = "biology"):
-        """
-        Create or load vector store from documents
-        
-        Args:
-            documents: List of Document objects to embed
-            collection_name: Name of the ChromaDB collection
-        """
-        # Split documents into chunks
-        chunks = self.text_splitter.split_documents(documents)
-        
-        # Create or load vector store
+        self.collection_name = collection_name
+        self.top_k = top_k
+        self.memory_max = memory_max
+        self.memory_token_limit = memory_token_limit
+
+        # Embeddings + splitter
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150, add_start_index=True)
+
+        # Gemini model
+        self.model = None
+
+        # Vector store + BM25
+        self.vector_store: Optional[Chroma] = None
+        self.retriever = None
+        self.bm25: Optional[BM25Okapi] = None
+        self.docs: List[Document] = []
+        self.chunks: List[Document] = []
+
+        # Redis
+        self.redis_url = redis_url
+        self.redis: Optional[redis.Redis] = None
+
+        # ThreadPool for blocking Gemini calls
+        self.executor = ThreadPoolExecutor(max_workers=4)
+
+    # -------------------------------
+    # Redis memory
+    # -------------------------------
+    async def init_redis(self):
+        # Temporarily disabled Redis usage.
+        # if self.redis is None:
+        #     self.redis = await redis.from_url(self.redis_url, encoding="utf-8", decode_responses=True)
+        #     logging.info("Redis initialized for chat memory.")
+        return
+
+    async def update_memory(self, query: str, answer: str):
+        # Temporarily disabled Redis usage.
+        # await self.init_redis()
+        # mem_json = await self.redis.get(DEFAULT_MEMORY_KEY)
+        # memory_list = json.loads(mem_json) if mem_json else []
+        # memory_list.append(f"Q: {query}\nA: {answer}")
+        # memory_list = memory_list[-self.memory_max:]
+        # await self.redis.set(DEFAULT_MEMORY_KEY, json.dumps(memory_list))
+        return
+
+    async def get_memory_context(self) -> str:
+        # Temporarily disabled Redis usage.
+        # await self.init_redis()
+        # mem_json = await self.redis.get(DEFAULT_MEMORY_KEY)
+        # memory_list = json.loads(mem_json) if mem_json else []
+        # return "\n".join(memory_list)
+        return ""
+
+    async def summarize_memory(self) -> str:
+        # Temporarily disabled Redis-backed memory summarization.
+        # memory = await self.get_memory_context()
+        # if len(memory) <= self.memory_token_limit:
+        #     return memory
+        # return memory[-self.memory_token_limit:]
+        return ""
+
+
+    # -------------------------------
+    # Gemini model
+    # -------------------------------
+    def init_model(self):
+        if self.model:
+            return
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY not set")
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
+        logging.info("Gemini 2.5 Flash model initialized.")
+
+    # -------------------------------
+    # Document loading
+    # -------------------------------
+    def _hash_text(self, text: str) -> str:
+        return hashlib.md5(text.encode()).hexdigest()
+
+    def load_documents_from_folder(self, folder: str, pattern: str = "*.txt") -> List[Document]:
+        folder_path = Path(folder)
+        if not folder_path.exists():
+            raise FileNotFoundError(f"Folder not found: {folder}")
+
+        all_docs = []
+        for file in folder_path.glob(pattern):
+            loader = TextLoader(str(file), encoding="utf-8")
+            docs = loader.load()
+            for d in docs:
+                d.metadata["source"] = str(file)
+                d.metadata["id_hash"] = self._hash_text(d.page_content)
+            all_docs.extend(docs)
+
+        self.docs = all_docs
+        logging.info(f"Loaded {len(all_docs)} documents from {folder}")
+        return all_docs
+
+    # -------------------------------
+    # Vector store + BM25
+    # -------------------------------
+    def create_vector_store(self):
+        logging.info("Splitting documents into chunks...")
+        self.chunks = self.text_splitter.split_documents(self.docs)
+        for c in self.chunks:
+            c.metadata["id_hash"] = self._hash_text(c.page_content)
+
+        logging.info(f"Creating Chroma vector store with {len(self.chunks)} chunks...")
         self.vector_store = Chroma.from_documents(
-            documents=chunks,
+            self.chunks,
             embedding=self.embeddings,
-            persist_directory=self.persist_directory,
-            collection_name=collection_name
+            collection_name=self.collection_name,
+            persist_directory=self.persist_directory
         )
-        
-        return self.vector_store
-    
-    def load_existing_vector_store(self, collection_name: str = "biology"):
-        """
-        Load an existing vector store
-        
-        Args:
-            collection_name: Name of the ChromaDB collection
-        """
-        self.vector_store = Chroma(
-            persist_directory=self.persist_directory,
-            embedding_function=self.embeddings,
-            collection_name=collection_name
-        )
-        return self.vector_store
-    
-    def retrieve_relevant_docs(self, query: str, k: int = 4) -> List[Document]:
-        """
-        Retrieve relevant documents for a query
-        
-        Args:
-            query: Search query
-            k: Number of documents to retrieve
-            
-        Returns:
-            List of relevant Document objects
-        """
-        if self.vector_store is None:
-            raise ValueError("Vector store not initialized. Call create_vector_store() or load_existing_vector_store() first.")
-        
-        return self.vector_store.similarity_search(query, k=k)
-    
-    def retrieve_with_scores(self, query: str, k: int = 4):
-        """
-        Retrieve relevant documents with similarity scores
-        
-        Args:
-            query: Search query
-            k: Number of documents to retrieve
-            
-        Returns:
-            List of tuples (Document, score)
-        """
-        if self.vector_store is None:
-            raise ValueError("Vector store not initialized. Call create_vector_store() or load_existing_vector_store() first.")
-        
-        return self.vector_store.similarity_search_with_score(query, k=k)
-    
-    def get_context_from_query(self, query: str, k: int = 4) -> str:
-        """
-        Get formatted context string from query for prompt injection
-        
-        Args:
-            query: Search query
-            k: Number of documents to retrieve
-            
-        Returns:
-            Formatted context string
-        """
-        docs = self.retrieve_relevant_docs(query, k=k)
-        context_parts = [doc.page_content for doc in docs]
-        return "\n\n---\n\n".join(context_parts)
+        self.retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
+        tokenized = [chunk.page_content.split() for chunk in self.chunks]
+        self.bm25 = BM25Okapi(tokenized)
+        logging.info("BM25 index built on chunks.")
 
-# Initialize RAG service instance (can be imported and reused)
-def initialize_rag_service(
-    docs_path: str = None, 
-    docs_folder: str = "docs",
-    collection_name: str = "biology",
-    load_all_from_folder: bool = False
-) -> RAGService:
-    """
-    Initialize and set up RAG service
-    
-    Args:
-        docs_path: Path to a single document file (relative to src/ or absolute)
-        docs_folder: Path to folder containing documents (relative to src/ or absolute)
-        collection_name: Name of the ChromaDB collection
-        load_all_from_folder: If True and docs_folder is provided, load all .txt files from folder
-        
-    Returns:
-        Initialized RAGService instance
-    """
-    script_dir = Path(__file__).parent
-    rag_service = RAGService(persist_directory=str(script_dir / "chroma_db"))
-    
-    # Try to load existing vector store first
-    try:
-        rag_service.load_existing_vector_store(collection_name=collection_name)
-        return rag_service
-    except Exception:
-        pass  # Continue to create new vector store
-    
-    # Load documents based on provided parameters
-    documents = []
-    
-    if load_all_from_folder and docs_folder:
-        # Load all documents from folder
-        folder_path = script_dir / docs_folder if not Path(docs_folder).is_absolute() else Path(docs_folder)
-        documents = rag_service.load_documents_from_folder(str(folder_path))
-    elif docs_folder:
-        # Load specific folder (defaults to loading all .txt files)
-        folder_path = script_dir / docs_folder if not Path(docs_folder).is_absolute() else Path(docs_folder)
-        documents = rag_service.load_documents_from_folder(str(folder_path))
-    elif docs_path:
-        # Load single document file
-        file_path = script_dir / docs_path if not Path(docs_path).is_absolute() else Path(docs_path)
-        documents = rag_service.load_documents(str(file_path))
-    else:
-        # Default: try to load from docs/biology.txt
-        default_path = script_dir / "docs" / "biology.txt"
-        if default_path.exists():
-            documents = rag_service.load_documents(str(default_path))
+    # -------------------------------
+    # Hybrid retrieval
+    # -------------------------------
+    def _hybrid_retrieve(self, query: str, top_k: Optional[int] = None) -> List[Document]:
+        top_k = top_k or self.top_k
+        # NOTE: Don't call private `_get_relevant_documents()` directly; newer LangChain
+        # versions require an internal `run_manager` kwarg which breaks this call.
+        if self.retriever:
+            try:
+                # Preferred public API in newer LangChain (retrievers are Runnables)
+                vector_docs = self.retriever.invoke(query)
+            except Exception:
+                # Backwards-compat for older retriever interface
+                vector_docs = self.retriever.get_relevant_documents(query)
         else:
-            # Try loading all files from docs folder
-            docs_folder_path = script_dir / "docs"
-            if docs_folder_path.exists():
-                documents = rag_service.load_documents_from_folder(str(docs_folder_path))
-    
-    if documents:
-        rag_service.create_vector_store(documents, collection_name=collection_name)
-    else:
-        raise ValueError("No documents found to create vector store. Please provide docs_path or docs_folder.")
-    
-    return rag_service
+            vector_docs = []
+        bm25_docs = self.bm25.get_top_n(query.split(), self.chunks, n=top_k) if self.bm25 else []
+        combined = {d.metadata["id_hash"]: d for d in vector_docs + bm25_docs}
+        return list(combined.values())[:top_k]
+
+    async def hybrid_retrieve_async(self, query: str, top_k: Optional[int] = None):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self._hybrid_retrieve, query, top_k)
+
+    # -------------------------------
+    # Rerank
+    # -------------------------------
+    def rerank_blocking(self, query: str, docs: List[Document]) -> List[Document]:
+        self.init_model()
+        prompt = "Rank the following document chunks by relevance to the question. Return only the ordered list of indexes (0-based).\n\n"
+        prompt += f"QUESTION: {query}\n\nCHUNKS:\n"
+        for i, d in enumerate(docs):
+            prompt += f"{i}: {d.page_content}\n---\n"
+        try:
+            response = self.model.generate_content(prompt)
+            ranked_indexes = [int(i) for i in re.findall(r"\d+", response.text)]
+            ranked_docs = [docs[i] for i in ranked_indexes if i < len(docs)]
+            return ranked_docs if ranked_docs else docs
+        except Exception:
+            return docs
+
+
+    async def rerank_async(self, query: str, docs: List[Document]) -> List[Document]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self.rerank_blocking, query, docs)
+
+    # -------------------------------
+    # Ask
+    # -------------------------------
+    async def ask_async(self, query: str):
+        retrieved_docs = await self.hybrid_retrieve_async(query)
+        ranked_docs = await self.rerank_async(query, retrieved_docs)
+        memory_text = await self.summarize_memory()
+        context_text = "\n\n---\n\n".join([d.page_content for d in ranked_docs])
+
+        self.init_model()
+        prompt = f"""
+Use ONLY the context and memory to answer.
+If missing, reply: "I don’t know based on the documents."
+
+MEMORY:
+---
+{memory_text}
+---
+
+CONTEXT:
+---
+{context_text}
+---
+
+QUESTION:
+{query}
+"""
+        loop = asyncio.get_running_loop()
+        try:
+            response = await loop.run_in_executor(self.executor, self.model.generate_content, prompt)
+            answer = response.text.strip()
+        except Exception:
+            answer = "I don’t know based on the documents."
+
+        await self.update_memory(query, answer)
+        return answer, ranked_docs
+
+    # -------------------------------
+    # Stream
+    # -------------------------------
+    async def stream_answer_async(self, query: str) -> AsyncGenerator[str, None]:
+        """
+        Simple streaming wrapper around `ask_async`.
+
+        Note:
+        - The previous implementation used `self.model.stream_generate(...)`, which
+          is not a valid Google Generative AI Python client method and was raising
+          an exception on every call.
+        - That exception was caught and the fallback text
+          "I don’t know based on the documents." was always returned, even when the
+          answer existed in the documents.
+        - We now delegate to `ask_async` (which uses the correct `generate_content`
+          API) and stream the full answer as a single chunk.
+        """
+        try:
+            answer, _ = await self.ask_async(query)
+            yield answer
+        except Exception:
+            # If anything goes wrong, keep the same safe fallback message.
+            yield "I don’t know based on the documents."
 

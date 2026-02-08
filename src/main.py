@@ -1,12 +1,16 @@
 from enum import Enum
+import logging
+from pathlib import Path
 from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
+from pydantic import BaseModel
 
 from .instructions.general_preprompt import pre_prompt
 from .instructions import topic_preprompt_box, topic_preprompt_md
-from .rag_service import initialize_rag_service, RAGService
+from .rag_service import RAGService
 
 # Set up ================================================================================================
 
@@ -30,17 +34,13 @@ app = FastAPI()
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 # Initialize RAG service (lazy load on first use)
-rag_service: RAGService | None = None
+rag_service = RAGService()
 
 def get_rag_service() -> RAGService:
-    """Lazy initialization of RAG service"""
+    """Get initialized RAG service."""
     global rag_service
-    if rag_service is None:
-        rag_service = initialize_rag_service(
-            docs_folder="docs", 
-            collection_name="biology",
-            load_all_from_folder=True
-        )
+    if rag_service is None:  # defensive; should be set on startup
+        rag_service = RAGService()
     return rag_service
 
 # ========================================================================================================================
@@ -118,49 +118,46 @@ async def explain_topic(
 
 # ========================================================================================================================
 
-@app.post("/rag/gemini")
-async def explain_with_rag(
-    request: Request,
-    x_api_key: str = Header(None),  # Expecting a header like:  X-API-Key: <key>
-):
-    """
-    RAG endpoint: Retrieves relevant context from documents and generates response
-    """
+@app.on_event("startup")
+async def startup_event():
+    global rag_service
+    rag_service = RAGService()
+    await rag_service.init_redis()
+
+    DOCS_FOLDER = Path(__file__).parent / "docs"
+    if DOCS_FOLDER.exists():
+        rag_service.load_documents_from_folder(str(DOCS_FOLDER))
+        rag_service.create_vector_store()
+        logging.info("RAG service ready with documents.")
+    else:
+        logging.warning("Docs folder not found; RAG service ready without documents.")
+
+# -------------------------------
+# /ask endpoint
+# -------------------------------
+class AskRequest(BaseModel):
+    prompt: str
+    responseType: str | None = None
+    previousContext: str | None = None
+
+@app.post("/ask")
+async def ask_endpoint(payload: AskRequest, x_api_key: str = Header(None)):
     if x_api_key != INTERNAL_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if rag_service is None:
+        raise HTTPException(status_code=503, detail="RAG service not ready")
+    if not payload.prompt.strip():
+        raise HTTPException(status_code=400, detail="Empty prompt not allowed")
 
-    data = await request.json()
-    prompt = data.get("prompt")
-    raw_response_type = data.get("responseType")
-    previous_context = data.get("previousContext")
-    k = data.get("k", 4)  # Number of documents to retrieve (default: 4)
+    async def generator():
+        try:
+            async for chunk in rag_service.stream_answer_async(payload.prompt):
+                yield chunk
+        except Exception:
+            logging.exception("Error in streaming")
+            yield "I don’t know based on the documents."
 
-    if not prompt:
-        return {"error": "Missing prompt"}
-
-    # Get RAG service and retrieve relevant context
-    rag = get_rag_service()
-    retrieved_context = rag.get_context_from_query(prompt, k=k)
-
-    # Build prompt with retrieved context
-    response_type = _parse_response_type(raw_response_type)
-    
-    # Create enhanced prompt with RAG context
-    enhanced_prompt = f"""Based on the following context from the knowledge base:
-
-{retrieved_context}
-
----
-
-Now answer the following question: {prompt}
-
-{previous_context if previous_context else ""}
-"""
-    
-    prompt_text = pre_prompt(enhanced_prompt, previous_context, response_type)
-    response = model.generate_content(prompt_text)
-
-    return {"result": response.text}
+    return StreamingResponse(generator(), media_type="text/plain")
 
 if __name__ == "__main__":
     import uvicorn
