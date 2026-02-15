@@ -8,3 +8,4 @@ langchain-chroma
 chromadb
 sentence-transformers
 langchain
+rank_bm25

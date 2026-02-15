@@ -66,7 +66,7 @@ class RAGService:
         self.redis_url = redis_url
         self.redis: Optional[redis.Redis] = None
 
-        # ThreadPool for blocking Gemini calls
+        # ThreadPool
         self.executor = ThreadPoolExecutor(max_workers=4)
 
     # -------------------------------
@@ -223,7 +223,7 @@ class RAGService:
         self.init_model()
         prompt = f"""
 Use ONLY the context and memory to answer.
-If missing, reply: "I don’t know based on the documents."
+    If missing, reply: "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
 MEMORY:
 ---
@@ -243,7 +243,7 @@ QUESTION:
             response = await loop.run_in_executor(self.executor, self.model.generate_content, prompt)
             answer = response.text.strip()
         except Exception:
-            answer = "I don’t know based on the documents."
+            answer = "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
         await self.update_memory(query, answer)
         return answer, ranked_docs
@@ -260,7 +260,7 @@ QUESTION:
           is not a valid Google Generative AI Python client method and was raising
           an exception on every call.
         - That exception was caught and the fallback text
-          "I don’t know based on the documents." was always returned, even when the
+          "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ" was always returned, even when the
           answer existed in the documents.
         - We now delegate to `ask_async` (which uses the correct `generate_content`
           API) and stream the full answer as a single chunk.
@@ -270,5 +270,5 @@ QUESTION:
             yield answer
         except Exception:
             # If anything goes wrong, keep the same safe fallback message.
-            yield "I don’t know based on the documents."
+            yield "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
