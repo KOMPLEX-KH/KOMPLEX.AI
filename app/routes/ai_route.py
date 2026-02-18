@@ -1,0 +1,50 @@
+from fastapi import APIRouter, HTTPException, Header
+from app.instructions.general_preprompt import pre_prompt
+from app.models.gemini_body import GeminiBody
+from app.models.gemini_response_type import GeminiResponseType
+from app.utils import parse_response_type
+from app.core import setting
+from app.core.gemini import call_gemini
+
+router = APIRouter()
+
+
+@router.post("/gemini", response_model=GeminiResponseType)
+def explain_gemini(
+    body: GeminiBody, x_api_key: str = Header(..., alias="X-API-Key")
+):
+    try:
+        if x_api_key != setting.INTERNAL_API_KEY:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        if not body.prompt:
+            raise HTTPException(status_code=400, detail="Prompt is required")
+
+        response_type = parse_response_type(body.raw_response_type)
+        prompt_text = pre_prompt(body.prompt, body.previous_context, response_type)
+        response = call_gemini(prompt_text)
+
+        return GeminiResponseType(result=response)
+    except HTTPException:
+        raise HTTPException(status_code=400, detail="Invalid request")
+
+
+@router.post("/topic/gemini", response_model=GeminiResponseType)
+def explain_topic(
+    body: GeminiBody, x_api_key: str = Header(..., alias="X-API-Key")
+):
+    try:
+        if x_api_key != setting.INTERNAL_API_KEY:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        if not body.prompt or not body.topic_content:
+            raise HTTPException(
+                status_code=400, detail="Prompt and topic content are required"
+            )
+        response_type = parse_response_type(body.raw_response_type)
+        prompt_text = pre_prompt(body.prompt, body.previous_context, response_type)
+        response = call_gemini(prompt_text)
+
+        return GeminiResponseType(result=response)
+    except HTTPException:
+        raise HTTPException(status_code=400, detail="Invalid request")
