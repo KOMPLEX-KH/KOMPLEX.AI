@@ -12,14 +12,13 @@ app.include_router(rag_router)
 
 @app.on_event("startup")
 async def startup_event():
-    global rag_service
-    rag_service = RAGService()
-    await rag_service.init_redis()
+    app.state.rag_service = RAGService()
+    await app.state.rag_service.init_redis()
 
     DOCS_FOLDER = Path(__file__).parent / "docs"
     if DOCS_FOLDER.exists():
-        rag_service.load_documents_from_folder(str(DOCS_FOLDER))
-        rag_service.create_vector_store()
+        app.state.rag_service.load_documents_from_folder(str(DOCS_FOLDER))
+        app.state.rag_service.create_vector_store()
         logging.info("RAG service ready with documents.")
     else:
         logging.warning("Docs folder not found; RAG service ready without documents.")

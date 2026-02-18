@@ -7,7 +7,7 @@ from typing import List, Optional, AsyncGenerator
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from app.core.gemini import client
-from redis.asyncio import Redis
+#from redis.asyncio import Redis
 from langchain_community.document_loaders import TextLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
@@ -214,9 +214,6 @@ class RAGService:
             self.executor, self.rerank_blocking, query, docs
         )
 
-    # -------------------------------
-    # Ask
-    # -------------------------------
     async def ask_async(self, query: str):
         retrieved_docs = await self.hybrid_retrieve_async(query)
         ranked_docs = await self.rerank_async(query, retrieved_docs)
@@ -225,7 +222,7 @@ class RAGService:
 
         prompt = f"""
 Use ONLY the context and memory to answer.
-    If missing, reply: "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
+If missing, reply: "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
 MEMORY:
 ---
@@ -240,12 +237,18 @@ CONTEXT:
 QUESTION:
 {query}
 """
+
         try:
-            response = await client.models.generate_content(
-                model="gemini-2.5-flash", contents=prompt
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-flash",
+                contents=[prompt],
             )
-            answer = response.text.strip()
+            answer = (response.text or "").strip()
+            if not answer:
+                answer = "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
         except Exception:
+            logging.exception("Gemini generate_content failed")
             answer = "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
         await self.update_memory(query, answer)
