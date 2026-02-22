@@ -1,6 +1,7 @@
 from enum import Enum
 import logging
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -118,19 +119,44 @@ async def explain_topic(
 
 # ========================================================================================================================
 
+def _find_docs_folder() -> Optional[Path]:
+    """Find docs folder: first next to this file, then project_root/src/docs."""
+    _src_dir = Path(__file__).resolve().parent
+    candidate = _src_dir / "docs"
+    if candidate.exists():
+        return candidate
+    # Fallback: project root might be parent of src (e.g. when run from app/)
+    for parent in _src_dir.parents:
+        src_docs = parent / "src" / "docs"
+        if src_docs.exists():
+            return src_docs
+    return None
+
+
 @app.on_event("startup")
 async def startup_event():
     global rag_service
-    rag_service = RAGService()
+    _src_dir = Path(__file__).resolve().parent
+    _persist_dir = str(_src_dir / "chroma_db")
+    rag_service = RAGService(persist_directory=_persist_dir)
     await rag_service.init_redis()
 
-    DOCS_FOLDER = Path(__file__).parent / "docs"
-    if DOCS_FOLDER.exists():
+    DOCS_FOLDER = _find_docs_folder()
+    if DOCS_FOLDER is None:
+        logging.warning("Docs folder not found (looked next to src and src/docs). RAG will have no documents.")
+        return
+    try:
         rag_service.load_documents_from_folder(str(DOCS_FOLDER))
-        rag_service.create_vector_store()
-        logging.info("RAG service ready with documents.")
-    else:
-        logging.warning("Docs folder not found; RAG service ready without documents.")
+        num_docs = len(rag_service.docs)
+        logging.info("Docs folder: %s — loaded %s document(s)", DOCS_FOLDER, num_docs)
+        if num_docs > 0:
+            rag_service.create_vector_store()
+            logging.info("RAG service ready with documents.")
+        else:
+            logging.warning("No .txt files in docs folder; RAG service has no documents.")
+    except Exception as e:
+        logging.exception("Startup failed loading docs or creating vector store: %s", e)
+        # rag_service stays with no docs; retriever will return nothing
 
 # -------------------------------
 # /ask endpoint
@@ -139,6 +165,33 @@ class AskRequest(BaseModel):
     prompt: str
     responseType: str | None = None
     previousContext: str | None = None
+
+@app.get("/rag-status")
+async def rag_status(x_api_key: str = Header(None)):
+    """Return RAG state so you can see why retrieval might be empty. Requires X-API-Key."""
+    if x_api_key != INTERNAL_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if rag_service is None:
+        return {"ok": False, "error": "RAG service not initialized"}
+    test_error = None
+    try:
+        test_docs = await rag_service.hybrid_retrieve_async("ស៊ីមណូស្ពែម", top_k=2)
+        test_count = len(test_docs)
+    except Exception as e:
+        test_count = None
+        test_error = str(e)
+    out = {
+        "ok": True,
+        "docs_loaded": len(rag_service.docs),
+        "chunks": len(rag_service.chunks),
+        "retriever_ready": rag_service.retriever is not None,
+        "bm25_ready": rag_service.bm25 is not None,
+        "test_retrieval_count": test_count,
+    }
+    if test_error is not None:
+        out["test_retrieval_error"] = test_error
+    return out
+
 
 @app.post("/ask")
 async def ask_endpoint(payload: AskRequest, x_api_key: str = Header(None)):

@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 python-dotenv
+pydantic
 google-generativeai
 langchain-community
 langchain-core
@@ -9,3 +10,4 @@ chromadb
 sentence-transformers
 langchain
 rank_bm25
+redis

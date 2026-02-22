@@ -3,6 +3,7 @@ import hashlib
 import logging
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator
 import asyncio
@@ -29,6 +30,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 
 DEFAULT_MEMORY_KEY = "user_memory:default"
 
+
+def _bm25_tokens(text: str) -> List[str]:
+    """BM25 tokenization: whitespace + character 4-grams for long tokens (helps Khmer / copy-paste)."""
+    if not text or not text.strip():
+        return []
+    tokens = re.split(r"\s+", text.strip())
+    out = []
+    for t in tokens:
+        out.append(t)
+        if len(t) >= 4:
+            for i in range(len(t) - 3):
+                out.append(t[i : i + 4])
+    return out
+
+
 # ================================================
 # RAG Service
 # ================================================
@@ -38,7 +54,7 @@ class RAGService:
         persist_directory: str = "./chroma_db",
         collection_name: str = "biology",
         redis_url: str = "redis://localhost:6379",
-        top_k: int = 6,
+        top_k: int = 10,
         memory_max: int = 10,
         memory_token_limit: int = 2000,
     ):
@@ -131,45 +147,70 @@ class RAGService:
             raise FileNotFoundError(f"Folder not found: {folder}")
 
         all_docs = []
-        for file in folder_path.glob(pattern):
-            loader = TextLoader(str(file), encoding="utf-8")
-            docs = loader.load()
-            for d in docs:
-                d.metadata["source"] = str(file)
-                d.metadata["id_hash"] = self._hash_text(d.page_content)
-            all_docs.extend(docs)
+        for file in sorted(folder_path.glob(pattern)):
+            try:
+                loader = TextLoader(str(file), encoding="utf-8")
+                docs = loader.load()
+                for d in docs:
+                    d.metadata["source"] = str(file)
+                    d.metadata["id_hash"] = self._hash_text(d.page_content)
+                all_docs.extend(docs)
+            except Exception as e:
+                logging.warning("Skipping file %s: %s", file, e)
+                continue
 
         self.docs = all_docs
-        logging.info(f"Loaded {len(all_docs)} documents from {folder}")
+        logging.info("Loaded %s documents from %s", len(all_docs), folder)
         return all_docs
 
     # -------------------------------
     # Vector store + BM25
     # -------------------------------
     def create_vector_store(self):
-        logging.info("Splitting documents into chunks...")
-        self.chunks = self.text_splitter.split_documents(self.docs)
-        for c in self.chunks:
-            c.metadata["id_hash"] = self._hash_text(c.page_content)
+        if not self.docs:
+            logging.warning("create_vector_store called with no documents; retriever will return nothing.")
+            return
+        try:
+            logging.info("Splitting documents into chunks...")
+            self.chunks = self.text_splitter.split_documents(self.docs)
+            for c in self.chunks:
+                c.metadata["id_hash"] = self._hash_text(c.page_content)
 
-        logging.info(f"Creating Chroma vector store with {len(self.chunks)} chunks...")
-        self.vector_store = Chroma.from_documents(
-            self.chunks,
-            embedding=self.embeddings,
-            collection_name=self.collection_name,
-            persist_directory=self.persist_directory
-        )
-        self.retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
+            logging.info("Creating Chroma vector store with %s chunks at %s...", len(self.chunks), self.persist_directory)
+            vector_store = Chroma.from_documents(
+                self.chunks,
+                embedding=self.embeddings,
+                collection_name=self.collection_name,
+                persist_directory=self.persist_directory,
+            )
+            self.vector_store = vector_store
+            self.retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
-        tokenized = [chunk.page_content.split() for chunk in self.chunks]
-        self.bm25 = BM25Okapi(tokenized)
-        logging.info("BM25 index built on chunks.")
+            logging.info("Building BM25 index...")
+            tokenized = [_bm25_tokens(chunk.page_content) for chunk in self.chunks]
+            self.bm25 = BM25Okapi(tokenized)
+            logging.info("RAG index ready: %s chunks, retriever and BM25 built.", len(self.chunks))
+        except Exception as e:
+            logging.exception("create_vector_store failed: %s", e)
+            self.vector_store = None
+            self.retriever = None
+            self.bm25 = None
+            raise
 
     # -------------------------------
     # Hybrid retrieval
     # -------------------------------
+    @staticmethod
+    def _normalize_query(text: str) -> str:
+        """Normalize query for consistent matching (Unicode NFC, collapse whitespace)."""
+        if not text:
+            return text
+        normalized = unicodedata.normalize("NFC", text.strip())
+        return " ".join(normalized.split())
+
     def _hybrid_retrieve(self, query: str, top_k: Optional[int] = None) -> List[Document]:
         top_k = top_k or self.top_k
+        query = self._normalize_query(query)
         # NOTE: Don't call private `_get_relevant_documents()` directly; newer LangChain
         # versions require an internal `run_manager` kwarg which breaks this call.
         if self.retriever:
@@ -181,9 +222,13 @@ class RAGService:
                 vector_docs = self.retriever.get_relevant_documents(query)
         else:
             vector_docs = []
-        bm25_docs = self.bm25.get_top_n(query.split(), self.chunks, n=top_k) if self.bm25 else []
-        combined = {d.metadata["id_hash"]: d for d in vector_docs + bm25_docs}
-        return list(combined.values())[:top_k]
+        query_tokens = _bm25_tokens(query)
+        bm25_docs = self.bm25.get_top_n(query_tokens, self.chunks, n=top_k) if (self.bm25 and query_tokens) else []
+        # Prefer BM25 results first (reliable for Khmer/copy-paste); embedding model is English-only
+        bm25_ids = {d.metadata["id_hash"] for d in bm25_docs}
+        vector_only = [d for d in vector_docs if d.metadata["id_hash"] not in bm25_ids]
+        merged = list(bm25_docs) + vector_only
+        return merged[:top_k]
 
     async def hybrid_retrieve_async(self, query: str, top_k: Optional[int] = None):
         loop = asyncio.get_running_loop()
@@ -193,16 +238,29 @@ class RAGService:
     # Rerank
     # -------------------------------
     def rerank_blocking(self, query: str, docs: List[Document]) -> List[Document]:
+        if not docs:
+            return docs
         self.init_model()
-        prompt = "Rank the following document chunks by relevance to the question. Return only the ordered list of indexes (0-based).\n\n"
+        if self.model is None:
+            return docs
+        prompt = "Rank the following document chunks by relevance to the question. Return only the ordered list of indexes (0-based), e.g. 2,0,1,3,4,5.\n\n"
         prompt += f"QUESTION: {query}\n\nCHUNKS:\n"
         for i, d in enumerate(docs):
             prompt += f"{i}: {d.page_content}\n---\n"
         try:
             response = self.model.generate_content(prompt)
-            ranked_indexes = [int(i) for i in re.findall(r"\d+", response.text)]
-            ranked_docs = [docs[i] for i in ranked_indexes if i < len(docs)]
-            return ranked_docs if ranked_docs else docs
+            raw_indexes = [int(i) for i in re.findall(r"\d+", response.text)]
+            # Use model order for mentioned indexes, then append any missing so we never drop chunks
+            seen = set()
+            ordered = []
+            for i in raw_indexes:
+                if 0 <= i < len(docs) and i not in seen:
+                    seen.add(i)
+                    ordered.append(i)
+            for i in range(len(docs)):
+                if i not in seen:
+                    ordered.append(i)
+            return [docs[i] for i in ordered]
         except Exception:
             return docs
 
@@ -216,14 +274,25 @@ class RAGService:
     # -------------------------------
     async def ask_async(self, query: str):
         retrieved_docs = await self.hybrid_retrieve_async(query)
+        if not retrieved_docs and query:
+            # Fallback: try with start of query (e.g. first sentence) to still get some context
+            short = " ".join(query.split()[:15]).strip() or query[:80]
+            if short != query:
+                retrieved_docs = await self.hybrid_retrieve_async(short, top_k=self.top_k)
+                if retrieved_docs:
+                    logging.info("Retrieval fallback (short query) returned %s docs", len(retrieved_docs))
+        if not retrieved_docs:
+            logging.warning("Retriever returned 0 documents for query: %s", query[:80])
         ranked_docs = await self.rerank_async(query, retrieved_docs)
         memory_text = await self.summarize_memory()
         context_text = "\n\n---\n\n".join([d.page_content for d in ranked_docs])
 
         self.init_model()
-        prompt = f"""
-Use ONLY the context and memory to answer.
-    If missing, reply: "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
+        prompt = f"""You are answering from a biology textbook. The CONTEXT below contains question-answer pairs. Often a question is followed by "ចម្លើយ:" and then the answer.
+
+Your task: If the QUESTION (from the user) is the same or very similar to a question in the CONTEXT, reply with the answer that comes after "ចម្លើយ:" for that question. Use the exact wording from CONTEXT when possible. Reply in Khmer.
+
+Only if the QUESTION cannot be answered from the CONTEXT at all, reply exactly: "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
 
 MEMORY:
 ---
@@ -238,12 +307,21 @@ CONTEXT:
 QUESTION:
 {query}
 """
+        fallback = "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
+        model = self.model
+        if model is None:
+            await self.update_memory(query, fallback)
+            return fallback, ranked_docs
         loop = asyncio.get_running_loop()
         try:
-            response = await loop.run_in_executor(self.executor, self.model.generate_content, prompt)
-            answer = response.text.strip()
-        except Exception:
-            answer = "អធ្យាស្រ័យខ្ញុំមិនអាចជួយបានទេ"
+            response = await loop.run_in_executor(self.executor, model.generate_content, prompt)
+            answer = (response.text or "").strip()
+            if not answer:
+                logging.warning("Gemini returned empty response for query: %s", query[:80])
+                answer = fallback
+        except Exception as e:
+            logging.exception("Gemini generate_content failed for query %s: %s", query[:80], e)
+            answer = fallback
 
         await self.update_memory(query, answer)
         return answer, ranked_docs
