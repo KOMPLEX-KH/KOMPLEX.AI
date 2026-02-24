@@ -1,4 +1,4 @@
 from pydantic import BaseModel
 
-class GeminiResponseSchema(BaseModel):
+class ResponseSchema(BaseModel):
     result: str
