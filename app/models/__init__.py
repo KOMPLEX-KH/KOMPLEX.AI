@@ -1,9 +1,9 @@
 from .ask_request import AskRequest
-from .gemini_body import GeminiBody
-from .gemini_response_type import GeminiResponseType
+from .gemini_response_schema import GeminiResponseSchema
+from .reponse_type import ResponseType
 
 __all__ = [
     "AskRequest",
-    "GeminiBody",
-    "GeminiResponseType",
+    "GeminiResponseSchema",
+    "ResponseType",
 ]

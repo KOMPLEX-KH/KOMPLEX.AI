@@ -1,6 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class AskRequest(BaseModel):
     prompt: str
-    responseType: str | None = None
-    previousContext: str | None = None
+    response_type: str = Field(..., alias="responseType")
+    previous_context: str | None = Field(default=None, alias="previousContext")
+    topic_content: str | None = Field(default=None, alias="topicContent")
+    

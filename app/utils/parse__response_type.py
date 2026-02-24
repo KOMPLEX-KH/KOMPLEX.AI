@@ -1,10 +1,10 @@
-from app.models.komplex_reponse_type import KomplexResponseType
+from app.models.reponse_type import ResponseType
 from fastapi import HTTPException
 
-def parse_response_type(raw_response_type: str | None) -> KomplexResponseType:
+def parse_response_type(raw_response_type: str | None) -> ResponseType:
     if raw_response_type is None:
-        return KomplexResponseType.NORMAL
+        return ResponseType.NORMAL
     try:
-        return KomplexResponseType(raw_response_type)
+        return ResponseType(raw_response_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid responseType") from exc

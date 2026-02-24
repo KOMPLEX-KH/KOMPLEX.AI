@@ -1,4 +1,4 @@
 from enum import Enum
-class KomplexResponseType(str, Enum):
+class ResponseType(str, Enum):
     KOMPLEX = "komplex"
     NORMAL = "normal"
