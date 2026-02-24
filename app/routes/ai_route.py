@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header
-from app.instructions.general_preprompt import pre_prompt
+from app.instructions.general_preprompt import general_pre_prompt
+from app.instructions.topic_preprompt import topic_pre_prompt
 from app.models.gemini_body import GeminiBody
 from app.models.gemini_response_type import GeminiResponseType
 from app.utils import parse_response_type
@@ -10,7 +11,7 @@ router = APIRouter()
 
 
 @router.post("/gemini", response_model=GeminiResponseType)
-def explain_gemini(
+def explain_gemini( 
     body: GeminiBody, x_api_key: str = Header(..., alias="X-API-Key")
 ):
     try:
@@ -21,7 +22,7 @@ def explain_gemini(
             raise HTTPException(status_code=400, detail="Prompt is required")
 
         response_type = parse_response_type(body.raw_response_type)
-        prompt_text = pre_prompt(body.prompt, body.previous_context, response_type)
+        prompt_text = general_pre_prompt(body.prompt, body.previous_context, response_type)
         response = call_gemini(prompt_text)
 
         return GeminiResponseType(result=response)
@@ -42,7 +43,9 @@ def explain_topic(
                 status_code=400, detail="Prompt and topic content are required"
             )
         response_type = parse_response_type(body.raw_response_type)
-        prompt_text = pre_prompt(body.prompt, body.previous_context, response_type)
+        prompt_text = topic_pre_prompt(
+            body.prompt, body.topic_content, body.previous_context, response_type
+        )
         response = call_gemini(prompt_text)
 
         return GeminiResponseType(result=response)

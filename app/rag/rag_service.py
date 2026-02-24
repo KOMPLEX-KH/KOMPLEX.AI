@@ -7,7 +7,7 @@ from typing import List, Optional, AsyncGenerator
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from app.core.gemini import client
-#from redis.asyncio import Redis
+from redis.asyncio import Redis
 from langchain_community.document_loaders import TextLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
