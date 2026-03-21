@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from app.instructions.rules import (
     IDENTITY,
+    IDENTITY_MARKDOWN_ONLY,
     CONVERSATION,
     SERIALIZER_CONTRACT,
     ANSWER_BLUEPRINT,
@@ -152,6 +153,7 @@ class GeneralKomplexPrompt(PromptTemplate):
 
 class GeneralNormalPrompt(PromptTemplate):
     serializer_contract = None
+    identity = IDENTITY_MARKDOWN_ONLY
     role = """
         2. **Subjects allowed**: Any academic subject typically taught in global grade 12 curricula or below (math, sciences, history, geography, literature, study skills, exam prep, etc.).
            - If the input is about one of these, explain it.
@@ -168,6 +170,7 @@ class GeneralNormalPrompt(PromptTemplate):
            - Use `-` for unordered lists and numbers only for ordered steps written in math-solution style.
            - Put every equation on its own line inside `$$ ... $$`, with blank lines before/after.
            - Keep bullets short; never create walls of text or refer to unrelated previous context.
+           - Never include English words, Latin letters (A-Z/a-z), or parenthetical English terms.
            - Never use emojis.
 
         5. **Clarity helpers**
@@ -191,7 +194,11 @@ class GeneralNormalPrompt(PromptTemplate):
            - Provide 2-4 options per question, label with Khmer letters (ក, ខ, គ, ឃ).
            - Only include exercises when explicitly requested; never provide answers—remind learners to solve them.
 """
-    closing_instruction = "Now produce the final explanation, following all the formatting rules above."
+    closing_instruction = (
+        "Now produce the final explanation in Markdown only. "
+        "Do not output any JSON (TopicContent_V3) and do not wrap output in ``` blocks. "
+        "Use Khmer only and avoid all Latin letters (A-Z/a-z)."
+    )
 
     def build(self, prompt: str, previous_context: str, topic_content: Any = None) -> str:
         previous_context = previous_context or "គ្មានព័ត៌មានមុន"
