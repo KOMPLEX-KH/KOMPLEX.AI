@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package ai;
+
+service AIService {
+  rpc ExplainGemini (GeminiRequest) returns (Response);
+  rpc ExplainTopic (TopicRequest) returns (Response);
+}
+
+message GeminiRequest {
+  string prompt = 1;
+  string previous_context = 2;
+  string response_type = 3;
+  string api_key = 4;
+}
+
+message TopicRequest {
+  string prompt = 1;
+  string topic_content = 2;
+  string previous_context = 3;
+  string response_type = 4;
+  string api_key = 5;
+}
+
+message Response {
+  string result = 1;
+}
